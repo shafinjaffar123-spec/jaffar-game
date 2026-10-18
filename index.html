@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jaffar's Sky Adventure</title>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #10172a;
+  color: white;
+  text-align: center;
+}
+
+header { padding: 16px 8px 8px; }
+
+h1 { color: #57e5ff; margin-bottom: 5px; }
+
+p { color: #cbd5e1; }
+
+.game-box {
+  width: min(94%, 600px);
+  margin: 12px auto;
+  padding: 12px;
+  background: #1e293b;
+  border-radius: 18px;
+  box-shadow: 0 8px 30px #0006;
+}
+
+.stats {
+  display: flex;
+  justify-content: space-around;
+  gap: 5px;
+  margin-bottom: 10px;
+  font-weight: bold;
+}
+
+canvas {
+  width: 100%;
+  display: block;
+  background: #07152d;
+  border-radius: 10px;
+  border: 2px solid #334b70;
+  touch-action: none;
+}
+
+button {
+  border: none;
+  border-radius: 10px;
+  padding: 12px 18px;
+  margin: 5px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  color: #10172a;
+  background: #57e5ff;
+}
+
+button:active { transform: scale(.96); }
+
+.controls { margin-top: 10px; }
+
+#message {
+  min-height: 24px;
+  color: #fde68a;
+  font-weight: bold;
+}
+
+footer {
+  color: #94a3b8;
+  padding: 12px;
+  font-size: 13px;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <h1>🚀 Jaffar's Sky Adventure</h1>
+  <p>Collect coins. Dodge meteors. Beat your high score!</p>
+</header>
+
+<main class="game-box">
+  <div class="stats">
+    <span>⭐ Score: <span id="score">0</span></span>
+    <span>❤️ Lives: <span id="lives">3</span></span>
+    <span>🏆 Best: <span id="best">0</span></span>
+  </div>
+
+  <canvas id="game" width="480" height="600"></canvas>
+
+  <div id="message">Press START to begin your adventure!</div>
+
+  <button id="start">▶ START GAME</button>
+  <button id="pause">⏸ PAUSE</button>
+  <button id="restart">↻ RESTART</button>
+
+  <div class="controls">
+    <button id="left">⬅ LEFT</button>
+    <button id="right">RIGHT ➡</button>
+  </div>
+</main>
+
+<footer>
+  JAFFAR STUDIOS • Sky Adventure
+</footer>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const scoreEl = document.getElementById("score");
+const livesEl = document.getElementById("lives");
+const bestEl = document.getElementById("best");
+const message = document.getElementById("message");
+
+let player, objects, score, lives, running, paused;
+let frame = 0;
+let animationId = null;
+let keys = {};
+let best = 0;
+
+try {
+  best = Number(localStorage.getItem("jaffarSkyBest")) || 0;
+} catch (e) {}
+
+bestEl.textContent = best;
+
+function resetGame() {
+  player = { x: 220, y: 525, w: 40, h: 40, speed: 6 };
+  objects = [];
+  score = 0;
+  lives = 3;
+  frame = 0;
+  running = false;
+  paused = false;
+  keys = {};
+
+  updateStats();
+  message.textContent = "Collect yellow coins and avoid red meteors!";
+  draw();
+}
+
+function updateStats() {
+  scoreEl.textContent = score;
+  livesEl.textContent = lives;
+  bestEl.textContent = best;
+}
+
+function drawBackground() {
+  const gradient = ctx.createLinearGradient(0, 0, 0, 600);
+  gradient.addColorStop(0, "#08152f");
+  gradient.addColorStop(1, "#193b62");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 480, 600);
+
+  for (let i = 0; i < 55; i++) {
+    let x = (i * 83) % 480;
+    let y = (i * 127 + frame * 0.6) % 600;
+
+    ctx.fillStyle = i % 3 === 0 ? "#57e5ff" : "#ffffff";
+    ctx.globalAlpha = 0.35 + (i % 5) / 10;
+    ctx.fillRect(x, y, 2, 2);
+  }
+
+  ctx.globalAlpha = 1;
+}
+
+function drawPlayer() {
+  ctx.save();
+  ctx.translate(player.x + player.w / 2, player.y + player.h / 2);
+
+  ctx.fillStyle = "#57e5ff";
+  ctx.beginPath();
+  ctx.moveTo(0, -24);
+  ctx.lineTo(19, 17);
+  ctx.lineTo(0, 9);
+  ctx.lineTo(-19, 17);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(0, -3, 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#fb923c";
+  ctx.beginPath();
+  ctx.moveTo(-7, 15);
+  ctx.lineTo(0, 29 + Math.random() * 5);
+  ctx.lineTo(7, 15);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawObjects() {
+  for (const obj of objects) {
+    if (obj.type === "coin") {
+      ctx.fillStyle = "#facc15";
+      ctx.beginPath();
+      ctx.arc(obj.x, obj.y, 12, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = "#fff1a8";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      ctx.fillStyle = "#854d0e";
+      ctx.font = "bold 15px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText("$", obj.x, obj.y + 5);
+    } else {
+      ctx.fillStyle = "#fb4b4b";
+      ctx.beginPath();
+      ctx.arc(obj.x, obj.y, obj.r, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#ffb08a";
+      ctx.beginPath();
+      ctx.arc(obj.x - 4, obj.y - 4, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+function draw() {
+  drawBackground();
+
+  if (player) drawPlayer();
+  if (objects) drawObjects();
+
+  if (!running) {
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    ctx.font = "bold 25px Arial";
+    ctx.fillText("SKY ADVENTURE", 240, 245);
+    ctx.font = "16px Arial";
+    ctx.fillText("Your adventure awaits!", 240, 278);
+  }
+}
+
+function spawnObjects() {
+  const speed = Math.min(3 + score / 100, 8);
+
+  if (frame % 38 === 0) {
+    objects.push({
+      type: "coin",
+      x: 20 + Math.random() * 440,
+      y: -20,
+      speed: speed
+    });
+  }
+
+  if (frame % Math.max(22, 65 - Math.floor(score / 15)) === 0) {
+    objects.push({
+      type: "meteor",
+      x: 20 + Math.random() * 440,
+      y: -25,
+      r: 15 + Math.random() * 5,
+      speed: speed + Math.random() * 2
+    });
+  }
+}
+
+function overlaps(obj) {
+  const closestX = Math.max(player.x,
+    Math.min(obj.x, player.x + player.w));
+  const closestY = Math.max(player.y,
+    Math.min(obj.y, player.y + player.h));
+
+  const dx = obj.x - closestX;
+  const dy = obj.y - closestY;
+  const radius = obj.type === "coin" ? 12 : obj.r;
+
+  return dx * dx + dy * dy < radius * radius;
+}
+
+function finishGame() {
+  running = false;
+  paused = false;
+  keys = {};
+
+  if (score > best) {
+    best = score;
+    try {
+      localStorage.setItem("jaffarSkyBest", best);
+    } catch (e) {}
+  }
+
+  updateStats();
+  message.textContent = "Game Over! Final score: " + score;
+  draw();
+
+  ctx.fillStyle = "#000b";
+  ctx.fillRect(30, 255, 420, 95);
+  ctx.fillStyle = "#fde68a";
+  ctx.textAlign = "center";
+  ctx.font = "bold 28px Arial";
+  ctx.fillText("GAME OVER", 240, 294);
+  ctx.font = "18px Arial";
+  ctx.fillText("Score: " + score + " | Best: " + best, 240, 326);
+}
+
+function loop() {
+  animationId = null;
+  if (!running || paused) return;
+
+  frame++;
+
+  if (keys.ArrowLeft || keys.a || keys.A) player.x -= player.speed;
+  if (keys.ArrowRight || keys.d || keys.D) player.x += player.speed;
+
+  player.x = Math.max(0, Math.min(480 - player.w, player.x));
+
+  spawnObjects();
+
+  for (let i = objects.length - 1; i >= 0; i--) {
+    const obj = objects[i];
+    obj.y += obj.speed;
+
+    if (overlaps(obj)) {
+      if (obj.type === "coin") {
+        score += 10;
+        message.textContent = "+10 points! Keep going!";
+      } else {
+        lives--;
+        message.textContent = "Meteor hit! Be careful!";
+      }
+
+      objects.splice(i, 1);
+      updateStats();
+
+      if (lives <= 0) {
+        finishGame();
+        return;
+      }
+      continue;
+    }
+
+    if (obj.y > 630) objects.splice(i, 1);
+  }
+
+  if (frame % 5 === 0) updateStats();
+
+  draw();
+  animationId = requestAnimationFrame(loop);
+}
+
+function startGame() {
+  if (running && !paused) return;
+
+  if (paused) {
+    paused = false;
+    message.textContent = "Game resumed!";
+    loop();
+    return;
+  }
+
+  if (!running) {
+    resetGame();
+    running = true;
+    message.textContent = "Go! Collect coins and dodge meteors!";
+    loop();
+  }
+}
+
+function pauseGame() {
+  if (!running) return;
+
+  paused = !paused;
+
+  if (paused) {
+    if (animationId !== null) cancelAnimationFrame(animationId);
+    animationId = null;
+    keys = {};
+    message.textContent = "Game paused. Press PAUSE to continue.";
+    draw();
+    ctx.fillStyle = "#0009";
+    ctx.fillRect(70, 250, 340, 90);
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    ctx.font = "bold 30px Arial";
+    ctx.fillText("PAUSED", 240, 305);
+  } else {
+    message.textContent = "Game resumed!";
+    loop();
+  }
+}
+
+function restartGame() {
+  if (animationId !== null) cancelAnimationFrame(animationId);
+  animationId = null;
+  resetGame();
+  running = true;
+  message.textContent = "New game! Good luck!";
+  loop();
+}
+
+document.getElementById("start").addEventListener("click", startGame);
+document.getElementById("pause").addEventListener("click", pauseGame);
+document.getElementById("restart").addEventListener("click", restartGame);
+
+document.addEventListener("keydown", e => {
+  if (["ArrowLeft", "ArrowRight", " "].includes(e.key)) e.preventDefault();
+
+  if (e.key === " " && !running) startGame();
+  else if (e.key === "Escape") pauseGame();
+
+  keys[e.key] = true;
+});
+
+document.addEventListener("keyup", e => {
+  keys[e.key] = false;
+});
+
+function holdButton(id, key) {
+  const btn = document.getElementById(id);
+
+  const down = e => {
+    e.preventDefault();
+    keys[key] = true;
+  };
+
+  const up = e => {
+    e.preventDefault();
+    keys[key] = false;
+  };
+
+  btn.addEventListener("pointerdown", down);
+  btn.addEventListener("pointerup", up);
+  btn.addEventListener("pointerleave", up);
+  btn.addEventListener("pointercancel", up);
+}
+
+holdButton("left", "ArrowLeft");
+holdButton("right", "ArrowRight");
+
+resetGame();
+</script>
+
+</body>
+</html>
